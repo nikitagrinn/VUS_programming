@@ -326,6 +326,119 @@ class CurrencyFetcher(metaclass=SingletonMeta):
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
         plt.close()
         print(f"График сохранён: {output_path}")
+
+
+# Тесты
+
+class TestCurrencyFetcher(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        """Загружаем данные заранее — все тесты будут брать из кэша."""
+        cls.fetcher = CurrencyFetcher(throttle_seconds=1.0)
+        for attempt in range(3):
+            result = cls.fetcher.get_currencies(["R01035", "R01239"])
+            if result and result[0].get("GBP") is not None:
+                break
+            cls.fetcher._CurrencyFetcher__last_request_time = 0
+            time.sleep(1)
+        else:
+            raise Exception("Не удалось получить данные с ЦБ РФ за 3 попытки")
+
+    def test_singleton(self):
+        """Два вызова конструктора возвращают один и тот же объект."""
+        f2 = CurrencyFetcher()
+        self.assertIs(self.fetcher, f2)
+
+    def test_invalid_id_returns_none(self):
+        """Неверный ID возвращает {id: None}."""
+        result = self.fetcher.get_currencies(["R9999"])
+        self.assertEqual(len(result), 1)
+        self.assertIsNone(result[0].get("R9999"))
+
+    def test_gbp_name_russian(self):
+        """Название GBP содержит русскоязычное слово 'Фунт'."""
+        result = self.fetcher.get_currencies(["R01035"])
+        entry = result[0].get("GBP")
+        self.assertIsNotNone(entry)
+        self.assertIn("Фунт", entry[0])
+
+    def test_gbp_value_in_range(self):
+        """Курс GBP находится в диапазоне 0–999."""
+        result = self.fetcher.get_currencies(["R01035"])
+        parts = result[0]["GBP"][1]
+        val = float(f"{parts[0]}.{parts[1]}")
+        self.assertGreater(val, 0)
+        self.assertLess(val, 999)
+
+    def test_eur_value_in_range(self):
+        """Курс EUR находится в диапазоне 0–999."""
+        result = self.fetcher.get_currencies(["R01239"])
+        parts = result[0]["EUR"][1]
+        val = float(f"{parts[0]}.{parts[1]}")
+        self.assertGreater(val, 0)
+        self.assertLess(val, 999)
+
+    def test_throttle(self):
+        """Второй запрос к серверу ждёт throttle_seconds после первого."""
+        f = CurrencyFetcher()
+        f.throttle_seconds = 1.0
+        f._CurrencyFetcher__cache.clear()
+        f._CurrencyFetcher__last_request_time = 0
+        start = time.time()
+        f.get_currencies(["R01035"])       # 1-й запрос: данных нет → fetch сразу
+        f._CurrencyFetcher__cache.clear()
+        f.get_currencies(["R01239"])       # 2-й запрос: elapsed ≈ 0 < 1.0 → sleep(~1с) → fetch
+        self.assertGreaterEqual(time.time() - start, 1.0)
+
+    def test_parts_format(self):
+        """Значение курса хранится как кортеж из двух строк."""
+        result = self.fetcher.get_currencies(["R01035"])
+        parts = result[0]["GBP"][1]
+        self.assertIsInstance(parts, tuple)
+        self.assertEqual(len(parts), 2)
+        self.assertTrue(parts[0].isdigit())
+
+    def test_getter_setter_throttle(self):
+        """Геттер и сеттер throttle_seconds работают корректно."""
+        f = CurrencyFetcher()
+        f.throttle_seconds = 2.5
+        self.assertEqual(f.throttle_seconds, 2.5)
+        f.throttle_seconds = 1.0
+
+    def test_invalid_throttle_raises(self):
+        """Отрицательный throttle вызывает ValueError."""
+        f = CurrencyFetcher()
+        with self.assertRaises(ValueError):
+            f.throttle_seconds = -1.0
+
+
+if __name__ == "__main__":
+    fetcher = CurrencyFetcher(throttle_seconds=1.0)
+    fetcher2 = CurrencyFetcher()
+
+    print(f"fetcher is fetcher2: {fetcher is fetcher2}")  # True
+
+    print("\nКурсы GBP, KZT, TRY:")
+    results = fetcher.get_currencies(["R01035", "R01335", "R01700J"])
+    for item in results:
+        for code, val in item.items():
+            if val:
+                print(f"  {code}: {val[0]} — {val[1][0]},{val[1][1]}")
+
+    print("\nНеверный ID:")
+    print(fetcher.get_currencies(["R9999"]))
+
+    print("\nСтрою график...")
+    chart_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "currencies.jpg")
+    fetcher.plot_currencies(output_path=chart_path)
+
+    print("\n" + "=" * 50)
+    print("Юнит-тесты:")
+    print("=" * 50)
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(TestCurrencyFetcher)
+    unittest.TextTestRunner(verbosity=2).run(suite)
 ```
 
 ---
