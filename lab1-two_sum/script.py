@@ -25,6 +25,15 @@ class TestTwoSum(unittest.TestCase):
     def test_negative_numbers(self):
         self.assertEqual(self.solution.two_sum([-1, -2, -3, -4, -5], -8), [2, 4])
 
+    def test_zero_target(self):
+        self.assertEqual(self.solution.two_sum([1, -1, 2, 3], 0), [0, 1])
+
+    def test_no_solution(self):
+        self.assertEqual(self.solution.two_sum([1, 2, 3, 4], 10), [])
+
+    def test_duplicate_numbers(self):
+        self.assertEqual(self.solution.two_sum([3, 3, 4, 5], 6), [0, 1])
+
 
 if __name__ == '__main__':
     unittest.main()
